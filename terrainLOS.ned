@@ -31,11 +31,13 @@ simple terrainLOS
 {
 
     parameters:
+        bool enabled = default(true);
+        bool use_height_map = default(true);
         int priority = default(0);
-        // signalAnalogRepresentation = default("unitDisk");
-        int east_width = 600;
-        int south_width = 600;
-        int east_offset = 0;
-        int south_offset = 0;
+        int east_width = default(600);
+        int south_width = default(600);
+        int radio_height = default(0);
+        int east_offset = default(0);
+        int south_offset = default(0);
 
 }

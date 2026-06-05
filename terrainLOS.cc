@@ -10,6 +10,8 @@
 #include "inet/physicallayer/wireless/common/analogmodel/unitdisk/UnitDiskReceiverAnalogModel.h"
 #include "inet/physicallayer/wireless/common/analogmodel/unitdisk/UnitDiskReceptionAnalogModel.h"
 
+#include "height_map.h"
+
 using namespace inet;
 using namespace physicallayer;
 using namespace std;
@@ -17,50 +19,39 @@ using namespace std;
 
 class terrainLOS : public cSimpleModule {
     public:
-        //terrainLOS();
         bool has_los(const Coord t_pos, Coord r_pos) const;
     protected:
         virtual void initialize() override;
-        // virtual bool isInCommunicationRange(const ITransmission *transmission, const Coord& startPosition, const Coord& endPosition) const override;
-        // vector<vector<double>> h_map(0, vector<double>(0, 0));
         int east_width;
         int south_width;
+        int radio_height;
         vector<vector<double>> h_map;
+        bool enabled;
+        bool use_height_map;
         // vector<vector<double>> view_map;
 };
 
 Define_Module(terrainLOS);
 
 bool terrainLOS::has_los(const Coord t_pos, Coord r_pos) const {
+    if (!enabled) {
+        EV_INFO << "TerrainLOS: not enabled, skipping check\n";
+        return true;
+    }
     const double d = t_pos.distance(r_pos);
-    EV_INFO << "here :)\n";
-    EV_INFO << to_string(d);
-    EV_INFO << "\n";
 
     vector<vector<double>> view_map(east_width, vector<double>(south_width, 0.0));
 
-    // EV_INFO << to_string(h_map[50][0]);
-    // EV_INFO << " ";
-    // EV_INFO << to_string(h_map[50][50]);
-    // EV_INFO << " ";
-    // EV_INFO << to_string(h_map[99][99]);
-    // EV_INFO << "\n";
 
-    // double srcX = t_pos.x
-    // double srcY = t_pos.y 
     int x0 = (int) t_pos.x;
     int y0 = (int) t_pos.y;
 
     double x0f = t_pos.x;
     double y0f = t_pos.y;
-    EV_INFO << to_string(x0f);
-    EV_INFO << "\n";
-    EV_INFO << to_string(y0f);
-    EV_INFO << "\n";
 
     // // Wang, Robinson, and White's Algorithm for finding line of sight
     // // ported from https://github.com/TerrainLOS/TerrainLOS/blob/release-2-7/java/edu/ucsc/terrainlos/TerrainLOSMedium.java
-    double z0 = h_map[x0f][y0f];
+    double z0 = h_map[x0f][y0f] + radio_height;
 
     int x1;
     int y1;
@@ -83,7 +74,6 @@ bool terrainLOS::has_los(const Coord t_pos, Coord r_pos) const {
         }
     }
 
-    EV_INFO << "here 1\n";
     // Divide into 8 octets and 8 axes 
     // E 
     for(int x = x0 + 2; x < east_width; x++) {
@@ -305,18 +295,19 @@ bool terrainLOS::has_los(const Coord t_pos, Coord r_pos) const {
     // get results:
     // TODO: host in corner, to high?
     if(h_map[(int) r_pos.x][(int) r_pos.y] >= view_map[(int) r_pos.x][(int) r_pos.y]) {
-        EV_INFO << "Has LOS\n";
+        EV_INFO << "TerrainLOS: Has LOS\n";
         return true;
     } else {
+        EV_INFO << "TerrainLOS: Does not have LOS. Required height: ";
         EV_INFO << to_string(view_map[(int) r_pos.x][(int) r_pos.y]);
-        EV_INFO << "\nDoes not have LOS\n";
+        EV_INFO << ", Receiver height: ";
+        EV_INFO << to_string(h_map[(int) r_pos.x][(int) r_pos.y]);
+        EV_INFO << "\n";
         return false;
     }
 
     return true;
 }
-
-// TODO: get path of dem from ned and initilize with it
 
 vector<vector<double>> make_bowl(int east_width, int south_width) {
     vector<vector<double>> h_map(east_width, vector<double>(south_width, 0.0));
@@ -341,8 +332,15 @@ vector<vector<double>> make_bowl(int east_width, int south_width) {
 void terrainLOS::initialize() {
     east_width = par("east_width");
     south_width = par("south_width");
-    h_map = make_bowl(east_width, south_width);
-    EV << "radioexp created\n";
+    radio_height = par("radio_height");
+    enabled = par("enabled");
+    use_height_map = par("use_height_map");
+    if (use_height_map) {
+        h_map = height_map;
+    } else{
+        h_map = make_bowl(east_width, south_width);
+    }
+    // EV << "TerrainLOS prepared\n";
     // EV << this->getNedTypeAndFullPath();
 }
 
@@ -363,7 +361,8 @@ bool UnitDiskReceiverAnalogModel::computeIsReceptionPossible(const IListening *l
 
     const Coord t_pos = reception->getTransmission()->getStartPosition();
     const Coord r_pos = reception->getStartPosition();
-    cModule* mod = getModuleByPath(p.c_str()); // TODO: change to find, handle failure
+    cModule* mod = getModuleByPath(p.c_str()); // <--- throws error if module is not found
+    // cModule* mod = findModuleByPath(p.c_str()); // <--- does not throw error if module is not found
     if (mod){
         terrainLOS* terrain = dynamic_cast<terrainLOS*>(mod);
         if (terrain) {
@@ -372,6 +371,8 @@ bool UnitDiskReceiverAnalogModel::computeIsReceptionPossible(const IListening *l
         } else {
             EV_INFO << "terrainLOS module cast failed\n";
         }
+    } else {
+        EV_INFO << "terrainLOS module not found";
     }
 
 
@@ -379,46 +380,4 @@ bool UnitDiskReceiverAnalogModel::computeIsReceptionPossible(const IListening *l
 }
 
 
-// bool RadioMedium::isPotentialReceiver(const IRadio *radio, const ITransmission *transmission) const {
-//     EV_INFO << "here :)\n";
-//     const Radio *receiverRadio = dynamic_cast<const Radio *>(radio);
-//     if (radioModeFilter && receiverRadio != nullptr && receiverRadio->getRadioMode() != IRadio::RADIO_MODE_RECEIVER && receiverRadio->getRadioMode() != IRadio::RADIO_MODE_TRANSCEIVER)
-//         return false;
-//     else if (listeningFilter && radio->getReceiver() != nullptr && !radio->getReceiver()->computeIsReceptionPossible(getListening(radio, transmission), transmission))
-//         return false;
-//     // TODO where is the tag?
-//     else if (macAddressFilter && !matchesMacAddressFilter(radio, transmission->getPacket()))
-//         return false;
-//     else if (rangeFilter == RANGE_FILTER_INTERFERENCE_RANGE) {
-//         EV_INFO << "here 1\n";
-//         const IArrival *arrival = getArrival(radio, transmission);
-//         return isInInterferenceRange(transmission, arrival->getStartPosition(), arrival->getEndPosition());
-//     }
-//     else if (rangeFilter == RANGE_FILTER_COMMUNICATION_RANGE) {
-//         EV_INFO << "here 2\n";
-//         return false; //--
-//         const IArrival *arrival = getArrival(radio, transmission);
-//         return isInCommunicationRange(transmission, arrival->getStartPosition(), arrival->getEndPosition());
-//     }
-//     else
-//         EV_INFO << "here 3\n";
-//         // EV_INFO << to_string(h_map[50][0]);
-//         // EV_INFO << " ";
-//         // EV_INFO << to_string(h_map[50][50]);
-//         // EV_INFO << " ";
-//         // EV_INFO << to_string(h_map[99][99]);
-//         // EV_INFO << "\n";
-//         const Coord r_pos = radio->getAntenna()->getMobility()->getCurrentPosition();
-//         const IArrival *arrival = getArrival(radio, transmission);
-//         double d = transmission->getStartPosition().distance(arrival->getEndPosition());
-//         EV_INFO << to_string(d);
-//         EV_INFO << "\n";
-//         cModule* mod = getModuleByPath("WirelessA2.terrainLOS");
-//         if(mod) {
-//             EV_INFO << "found\n";
-//         } else{
-//             EV_INFO << "not_found\n";
-//         }
-//         return true;
-// }
 
