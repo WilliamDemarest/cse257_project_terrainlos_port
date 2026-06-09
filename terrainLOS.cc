@@ -294,14 +294,15 @@ bool terrainLOS::has_los(const Coord t_pos, Coord r_pos) const {
 
     // get results:
     // TODO: host in corner, to high?
-    if(h_map[(int) r_pos.x][(int) r_pos.y] >= view_map[(int) r_pos.x][(int) r_pos.y]) {
+    const double r_height = h_map[(int) r_pos.x][(int) r_pos.y] + radio_height;
+    if(r_height >= view_map[(int) r_pos.x][(int) r_pos.y]) {
         EV_INFO << "TerrainLOS: Has LOS\n";
         return true;
     } else {
         EV_INFO << "TerrainLOS: Does not have LOS. Required height: ";
         EV_INFO << to_string(view_map[(int) r_pos.x][(int) r_pos.y]);
         EV_INFO << ", Receiver height: ";
-        EV_INFO << to_string(h_map[(int) r_pos.x][(int) r_pos.y]);
+        EV_INFO << to_string(r_height);
         EV_INFO << "\n";
         return false;
     }
